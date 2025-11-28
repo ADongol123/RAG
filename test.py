@@ -8,8 +8,6 @@ from sentence_transformers import SentenceTransformer, util
 import nltk
 import json
 from models.rag_pipeline import rag_pipeline_all_models
-from models.embedder import search_product
-from utils.formatting import format_products_for_llm
 
 nltk.download('punkt')
 
@@ -60,14 +58,13 @@ queries = [
     "List the best seller suitcase options"
 ]
 
-
 references = [
-    "The cheapest suitcase under $100 is the YESSUIT Travel Spinner 24-Inch in the Luggage category, priced at $79.99 (list price $129.99). It has a 4.5-star rating with 2,150 reviews, is a Best Seller, and was purchased 300 times last month. This suitcase stands out for its combination of affordability, quality, and popularity.",
-    "A lightweight suitcase with good reviews is the Samsonite Lite-Cube 20-Inch, priced at $99.99, rated 4.6 stars with 980 reviews, Best Seller, and bought 150 times last month. It is easy to carry and highly rated for its light weight and durability.",
-    "The suitcase with the highest rating is the TravelPro Platinum Elite 22-Inch, with a 4.9-star rating from 2,500 reviews, priced at $129.99, List Price $179.99, Best Seller, bought 400 last month. It is highly rated and reliable.",
-    "A durable suitcase for travel is the American Tourister Fieldbrook II 24-Inch, priced at $89.99, rated 4.7 stars with 1,800 reviews, Best Seller, bought 350 times last month. It is sturdy and well-reviewed for frequent travelers.",
-    "Suitcases bought frequently last month include the Delsey Helium Aero 21-Inch, priced at $99.99, rated 4.5 stars with 1,200 reviews, Best Seller, bought 500 times last month.",
-    "Best seller suitcase options are the Samsonite Winfield 2 20-Inch, priced at $109.99, rated 4.6 stars with 2,000 reviews, Best Seller, bought 450 times last month."
+    "The cheapest suitcase under $100 is the YESSUIT Travel Spinner 24-Inch...",
+    "A lightweight suitcase with good reviews is the Samsonite Lite-Cube...",
+    "The suitcase with the highest rating is the TravelPro Platinum Elite...",
+    "A durable suitcase for travel is the American Tourister Fieldbrook II...",
+    "Suitcases bought frequently last month include the Delsey Helium Aero...",
+    "Best seller suitcase options are the Samsonite Winfield 2 20-Inch..."
 ]
 
 # =====================================================================
@@ -94,7 +91,7 @@ def safe_search_product(query, k=5):
 def evaluate_all_models(rag_pipeline_func):
     model_results = {
         "flan_large": [],
-        "flan_base": [],
+        "microsoft/phi-2": [],
         "flan_small": []
     }
 
@@ -107,29 +104,37 @@ def evaluate_all_models(rag_pipeline_func):
         st.write(f"### Evaluating Query {q_idx+1}: {user_query}")
         outputs = rag_pipeline_func(user_query, top_k=5)
 
-        # Retrieve products safely
+        # retrieve products
         products_list = safe_search_product(user_query, k=5)
         formatted_products = "\n".join(format_products_for_llm(products_list))
 
-        for model_name in ["flan_large", "flan_base", "flan_small"]:
-
-            # Skip missing outputs
-            if model_name not in outputs.get("normal", {}):
+        for model_name in ["flan_large", "microsoft/phi-2", "flan_small"]:
+            if model_name not in outputs.get("normal", {}) or model_name not in outputs.get("json", {}):
                 continue
 
-            # NORMAL TEXT ONLY
             pred_text = outputs["normal"][model_name]
-
             r_text = compute_rouge(pred_text, reference)
             g_text = grounding_rate(pred_text, formatted_products)
             f_text = fluency_score(pred_text)
-
             final_text = (r_text + g_text + f_text) / 3
+
+            pred_json_str = outputs["json"][model_name]
+            try:
+                pred_json = json.loads(pred_json_str)
+                pred_json_combined = " ".join(str(v) for v in pred_json.values())
+            except:
+                pred_json_combined = pred_json_str
+
+            r_json = compute_rouge(pred_json_combined, reference)
+            g_json = grounding_rate(pred_json_combined, formatted_products)
+            f_json = fluency_score(pred_json_combined)
+            final_json = (r_json + g_json + f_json) / 3
 
             model_results[model_name].append({
                 "Model": model_name,
                 "Query": user_query,
-                "Accuracy": final_text
+                "Normal Accuracy": final_text,
+                "JSON Accuracy": final_json
             })
 
         progress.progress((q_idx+1) / len(queries))
@@ -188,7 +193,7 @@ if st.button("Search"):
         st.markdown("---")
 if st.button("Run Evaluation"):
     results = evaluate_all_models(rag_pipeline_all_models)
-    print("Evaluation Results:", results)
+
     # convert results to dataframe
     rows = []
     for model_name, entries in results.items():
@@ -208,51 +213,23 @@ if st.button("Run Evaluation"):
     models = df_results["Model"].unique()
     queries_list = df_results["Query"].unique()
 
-    # Create subplots
-    fig, axes = plt.subplots(1, len(queries_list), figsize=(24, 6), sharey=True)
-
-    # If only a single subplot, convert axes to list
-    if len(queries_list) == 1:
-        axes = [axes]
-
-    width = 0.5
-    color = "#1f77b4"
+    fig, axes = plt.subplots(1, len(queries_list), figsize=(22, 5), sharey=True)
+    colors = {"Normal": "blue", "JSON": "orange"}
+    width = 0.35
 
     for i, query in enumerate(queries_list):
         ax = axes[i]
+        data = df_results[df_results["Query"] == query]
 
-        data = df_results[df_results["Query"] == query].reset_index(drop=True)
         x = np.arange(len(data))
-
-        bars = ax.bar(
-            x,
-            data["Accuracy"],
-            width=width,
-            color=color,
-            edgecolor="black",
-            linewidth=1,
-        )
-
-        # Add bar labels
-        for bar in bars:
-            height = bar.get_height()
-            ax.annotate(
-                f"{height:.2f}",
-                xy=(bar.get_x() + bar.get_width()/2, height),
-                xytext=(0, 5),
-                textcoords="offset points",
-                ha="center",
-                fontsize=9,
-                fontweight="bold"
-            )
+        ax.bar(x - width/2, data["Normal Accuracy"], width, color="blue")
+        ax.bar(x + width/2, data["JSON Accuracy"], width, color="orange")
 
         ax.set_xticks(x)
-        ax.set_xticklabels(data["Model"], rotation=30, ha="right", fontsize=10)
+        ax.set_xticklabels(data["Model"], rotation=45, ha='right')
+        ax.set_title(query)
+        ax.grid(axis="y", linestyle="--", alpha=0.5)
 
-        ax.set_title(f"Query {i+1}", fontsize=12, fontweight="bold", pad=10)
-        ax.grid(axis="y", linestyle="--", alpha=0.4)
-
-    # Shared Y label
-    fig.text(0.04, 0.5, "Accuracy", va="center", rotation="vertical", fontsize=12)
+    fig.text(0.04, 0.5, 'Accuracy', rotation='vertical')
 
     st.pyplot(fig)

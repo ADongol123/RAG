@@ -1,36 +1,27 @@
-from models.prompts import (
-    build_prompt_cheapest,
-    build_prompt_best_rated,
-    build_prompt_most_purchased,
-    build_prompt_feature_based,
-    build_prompt_category_based,
-    build_prompt_general,
-)
+# from models.prompts import build_prompt
 
+# def select_prompt(user_query, retrieved_texts):
+#     """
+#     Automatically selects the correct selection_mode based on user query
+#     and builds a structured prompt for FLAN-T5 models.
+#     """
+#     query_lower = user_query.lower()
 
-def select_prompt(user_query, retrieved_texts):
-    query_lower = user_query.lower()
+#     # 1️⃣ Determine selection mode
+#     if any(x in query_lower for x in ["cheap", "cheapest", "under $", "lowest", "affordable", "price"]):
+#         selection_mode = "cheapest"
 
-    # Price-based
-    if any(x in query_lower for x in ["cheapest", "under $", "lowest price", "affordable","price"]):
-        return build_prompt_cheapest(user_query, retrieved_texts)
+#     elif any(x in query_lower for x in ["highest rating", "best rated", "top rated", "highest rated"]):
+#         selection_mode = "best_rated"
 
-    # Rating-based
-    elif any(x in query_lower for x in ["highest rating", "best rated", "top rated"]):
-        return build_prompt_best_rated(user_query, retrieved_texts)
+#     elif any(x in query_lower for x in ["most purchased", "popular", "bought frequently", "frequently bought", "best seller"]):
+#         selection_mode = "most_purchased"
 
-    # Popularity / purchased-based
-    elif any(x in query_lower for x in ["bought frequently", "most purchased", "popular last month"]):
-        return build_prompt_most_purchased(user_query, retrieved_texts)
+#     elif any(x in query_lower for x in ["durable", "sturdy", "lightweight", "travel-friendly", "compact", "expandable"]):
+#         selection_mode = "feature_based"
 
-    # Feature-based
-    elif any(x in query_lower for x in ["durable", "sturdy", "lightweight", "travel-friendly"]):
-        return build_prompt_feature_based(user_query, retrieved_texts)
+#     else:
+#         selection_mode = "general"
 
-    # Category-based
-    elif any(x in query_lower for x in ["suitcase", "luggage", "bag", "men's clothing", "laptop"]):
-        return build_prompt_category_based(user_query, retrieved_texts)
-
-    # Default fallback
-    else:
-        return build_prompt_general(user_query, retrieved_texts)
+#     # 2️⃣ Build structured prompt
+#     return build_prompt(user_query, retrieved_texts, selection_mode)
